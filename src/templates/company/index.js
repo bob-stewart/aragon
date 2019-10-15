@@ -2,13 +2,37 @@
 import React from 'react'
 import BN from 'bn.js'
 import { network } from '../../environment'
-import { ClaimDomain, KnownAppBadge, Review, Tokens, Voting } from '../kit'
+import {
+  ClaimDomainScreen,
+  KnownAppBadge,
+  ReviewScreen,
+  TokensScreen,
+  VotingScreen,
+} from '../kit'
 
 import header from './header.svg'
 import icon from './icon.svg'
 
 function completeDomain(domain) {
   return domain ? `${domain}.aragonid.eth` : ''
+}
+
+function adjustVotingSettings(support, quorum) {
+  // The max value for both support and quorum is 100% - 1
+  const onePercent = new BN(10).pow(new BN(16))
+  const hundredPercent = onePercent.mul(new BN(100))
+
+  let adjustedSupport = onePercent.mul(new BN(support))
+  if (adjustedSupport.eq(hundredPercent)) {
+    adjustedSupport = adjustedSupport.sub(new BN(1))
+  }
+
+  let adjustedQuorum = onePercent.mul(new BN(quorum))
+  if (adjustedQuorum.eq(hundredPercent)) {
+    adjustedQuorum = adjustedQuorum.sub(new BN(1))
+  }
+
+  return [adjustedSupport.toString(), adjustedQuorum.toString()]
 }
 
 export default {
@@ -20,64 +44,66 @@ export default {
     Use transferable tokens to represent ownership stake in your
     organization. Decisions are made based on stake-weighted voting.
   `,
-  // longdesc: '',
-  // caseStudyUrl: 'https://aragon.org/case-study/company',
-  userGuide:
+  userGuideUrl:
     'https://help.aragon.org/article/30-create-a-new-company-organization',
   sourceCodeUrl:
     'https://github.com/aragon/dao-templates/tree/templates-company-v1.0.0/templates/company',
   registry: 'aragonpm.eth',
-  modules: [
+  apps: [
     { appName: 'voting.aragonpm.eth', label: 'Voting' },
     { appName: 'token-manager.aragonpm.eth', label: 'Tokens' },
     { appName: 'finance.aragonpm.eth', label: 'Finance' },
   ],
-  optionalModules: [{ appName: 'agent.aragonpm.eth', label: 'Agent' }],
+  optionalApps: [{ appName: 'agent.aragonpm.eth', label: 'Agent' }],
   screens: [
-    [data => completeDomain(data.domain) || 'Claim domain', ClaimDomain],
-    ['Configure template', Voting],
-    ['Configure template', Tokens],
+    [
+      data => completeDomain(data.domain) || 'Claim domain',
+      props => <ClaimDomainScreen screenProps={props} />,
+    ],
+    ['Configure template', props => <VotingScreen screenProps={props} />],
+    ['Configure template', props => <TokensScreen screenProps={props} />],
     [
       'Review information',
-      ({ back, data, next }) => (
-        <Review
-          back={back}
-          data={data}
-          next={next}
-          items={[
-            {
-              label: 'General info',
-              fields: [
-                ['Organization template', 'Company'],
-                ['Name', completeDomain(data.domain)],
-              ],
-            },
-            {
-              label: (
-                <KnownAppBadge appName="voting.aragonpm.eth" label="Voting" />
-              ),
-              fields: Voting.formatReviewFields(data.voting),
-            },
-            {
-              label: (
-                <KnownAppBadge
-                  appName="token-manager.aragonpm.eth"
-                  label="Tokens"
-                />
-              ),
-              fields: Tokens.formatReviewFields(data.tokens),
-            },
-          ]}
-        />
-      ),
+      props => {
+        const { domain, voting, tokens } = props.data
+        return (
+          <ReviewScreen
+            screenProps={props}
+            items={[
+              {
+                label: 'General info',
+                fields: [
+                  ['Organization template', 'Company'],
+                  ['Name', completeDomain(domain)],
+                ],
+              },
+              {
+                label: (
+                  <KnownAppBadge appName="voting.aragonpm.eth" label="Voting" />
+                ),
+                fields: VotingScreen.formatReviewFields(voting),
+              },
+              {
+                label: (
+                  <KnownAppBadge
+                    appName="token-manager.aragonpm.eth"
+                    label="Tokens"
+                  />
+                ),
+                fields: TokensScreen.formatReviewFields(tokens),
+              },
+            ]}
+          />
+        )
+      },
     ],
   ],
   prepareTransactions(createTx, data) {
     const financePeriod = 0 // default
     const hasPayroll = false
 
-    const { domain, optionalModules = [], tokens, voting } = data
-    const useAgentAsVault = optionalModules.includes('agent.aragonpm.eth')
+    const { domain, optionalApps = [], tokens, voting } = data
+    const useAgentAsVault = optionalApps.includes('agent.aragonpm.eth')
 
     const { tokenName, tokenSymbol, members } = tokens
     const baseStake = new BN(10).pow(new BN(18))
@@ -87,9 +113,10 @@ export default {
     const accounts = members.map(([account]) => account)
 
     const { support, quorum, duration } = voting
-    const onePercent = new BN(10).pow(new BN(16))
-    const adjustedSupport = onePercent.mul(new BN(support)).toString()
-    const adjustedQuorum = onePercent.mul(new BN(quorum)).toString()
+    const [adjustedSupport, adjustedQuorum] = adjustVotingSettings(
+      support,
+      quorum
+    )
     const adjustedDuration = new BN(duration).toString()
     const votingSettings = [adjustedSupport, adjustedQuorum, adjustedDuration]
 
